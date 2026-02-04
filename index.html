@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>TabTimer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<style>
+body{font-family:Arial;margin:0;background:#f3f6fb}
+.card{max-width:900px;margin:auto;background:#fff;padding:20px;margin-top:20px;border-radius:12px}
+input,select,button{padding:10px;width:100%;margin-top:8px}
+button{background:#4f46e5;color:white;border:none;border-radius:8px}
+.hidden{display:none}
+.medbox{border:1px solid #ddd;padding:10px;border-radius:8px;margin-top:10px}
+</style>
+</head>
+
+<body>
+
+<div class="card" id="intro">
+<h2>TabTimer</h2>
+<p>
+TabTimer is built to help caregivers manage medicine schedules and help patients
+never forget their medicines. It provides alarms, voice reminders and live
+reporting between caregiver and patient.
+</p>
+<button onclick="showPhone()">Continue</button>
+</div>
+
+<div class="card hidden" id="phoneBox">
+<h3>Enter Phone Number</h3>
+<input id="phone">
+<button onclick="verifyPhone()">Next</button>
+</div>
+
+<div class="card hidden" id="codeBox">
+<h3>Enter Code</h3>
+<input id="code">
+<button onclick="verifyCode()">Verify</button>
+</div>
+
+<div class="card hidden" id="roleBox">
+<h3>You are</h3>
+<button onclick="openCaregiver()">Caregiver</button>
+<br><br>
+<button onclick="openPatient()">Patient</button>
+</div>
+
+<!-- ---------------- CAREGIVER ---------------- -->
+
+<div class="card hidden" id="caregiverPanel">
+<h3>Caregiver Panel</h3>
+<div id="medList"></div>
+<button onclick="addMed()">Add medicine</button>
+<br><br>
+<button onclick="saveAll()">Save medicines</button>
+<hr>
+<h4>Reports</h4>
+<button onclick="loadReports()">Load reports</button>
+<div id="reportBox"></div>
+</div>
+
+<!-- ---------------- PATIENT ---------------- -->
+
+<div class="card hidden" id="patientPanel">
+<h3>Patient Panel</h3>
+<button onclick="enableAlerts()">Enable medicine alerts</button>
+<div id="patientMeds"></div>
+</div>
+
+
+<script>
+const API_URL = "https://script.google.com/macros/s/AKfycbzVBB_NOaLt5-LgCQdw7ZibRMkTtlQYZfydY26pR3kTSQnyd2dg56MR8uikH0QOD00x0Q/exec";
+
+let userPhone="";
+let medicines=[];
+let alertEnabled=false;
+
+function showPhone(){
+hideAll();
+phoneBox.classList.remove("hidden");
+}
+
+function hideAll(){
+document.querySelectorAll(".card").forEach(c=>c.classList.add("hidden"));
+}
+
+async function api(data){
+let r = await fetch(API_URL,{
+method:"POST",
+body:JSON.stringify(data)
+});
+return r.json();
+}
+
+/* ---------------- LOGIN ---------------- */
+
+async function verifyPhone(){
+userPhone = phone.value.trim();
+let r = await api({action:"verifyPhone",phone:userPhone});
+if(r.status==="ok"){
+hideAll();codeBox.classList.remove("hidden");
+}else alert("Phone not found");
+}
+
+async function verifyCode(){
+let r = await api({action:"verifyCode",phone:userPhone,code:code.value.trim()});
+if(r.status==="ok"){
+hideAll();roleBox.classList.remove("hidden");
+}else alert("Invalid code");
+}
+
+/* ---------------- CAREGIVER ---------------- */
+
+function openCaregiver(){
+hideAll();
+caregiverPanel.classList.remove("hidden");
+medicines=[];
+medList.innerHTML="";
+}
+
+function addMed(){
+if(medicines.length>=5){alert("Max 5 medicines");return;}
+let id = medicines.length;
+medicines.push({});
+
+let d=document.createElement("div");
+d.className="medbox";
+d.innerHTML=`
+<b>Medicine ${id+1}</b>
+<input placeholder="Medicine name*" id="n${id}">
+<input type="number" placeholder="Quantity*" id="q${id}">
+<input type="time" id="t${id}">
+<select id="m${id}">
+<option>Before meal</option>
+<option>After meal</option>
+<option>3 times a day</option>
+</select>
+<label>Voice (optional)</label>
+<input type="file" accept="audio/*" id="v${id}">
+<label>Medicine photo*</label>
+<input type="file" accept="image/*" id="p${id}">
+<label>Medical report (optional)</label>
+<input type="file" accept="image/*" id="r${id}">
+`;
+medList.appendChild(d);
+}
+
+async function toBase64(file){
+return new Promise(res=>{
+let fr=new FileReader();
+fr.onload=()=>res(fr.result.split(",")[1]);
+fr.readAsDataURL(file);
+});
+}
+
+async function uploadFile(file){
+let b=await toBase64(file);
+let r=await api({
+action:"uploadFile",
+fileName:file.name,
+mimeType:file.type,
+base64:b
+});
+return r.url;
+}
+
+async function saveAll(){
+
+let out=[];
+
+for(let i=0;i<medicines.length;i++){
+
+let name=n(i).value.trim();
+let qty=q(i).value;
+let time=t(i).value;
+let meal=m(i).value;
+let photoFile=p(i).files[0];
+
+if(!name||!qty||!time||!photoFile){
+alert("All mandatory fields required");return;
+}
+
+let voiceURL="";
+if(v(i).files[0]) voiceURL=await uploadFile(v(i).files[0]);
+let photoURL=await uploadFile(photoFile);
+
+if(r(i).files[0]) await uploadFile(r(i).files[0]);
+
+out.push({
+name:name,
+qty:qty,
+time:time,
+mealType:meal,
+voiceUrl:voiceURL,
+photoUrl:photoURL
+});
+}
+
+await api({
+action:"saveMedicines",
+patientPhone:userPhone,
+medicines:out
+});
+
+alert("Saved successfully");
+}
+
+function n(i){return document.getElementById("n"+i);}
+function q(i){return document.getElementById("q"+i);}
+function t(i){return document.getElementById("t"+i);}
+function m(i){return document.getElementById("m"+i);}
+function v(i){return document.getElementById("v"+i);}
+function p(i){return document.getElementById("p"+i);}
+function r(i){return document.getElementById("r"+i);}
+
+/* ---------------- REPORT ---------------- */
+
+async function loadReports(){
+let r=await api({action:"getCaregiverReport"});
+let h="";
+r.report.forEach(x=>{
+h+=`${x.phone} | ${x.medicine} | ${x.status} | ${new Date(x.time).toLocaleString()}<br>`;
+});
+reportBox.innerHTML=h;
+}
+
+/* ---------------- PATIENT ---------------- */
+
+function openPatient(){
+hideAll();
+patientPanel.classList.remove("hidden");
+loadPatientMeds();
+}
+
+async function loadPatientMeds(){
+let r=await api({action:"getPatientMedicines",phone:userPhone});
+let box="";
+r.medicines.forEach((m,i)=>{
+box+=`
+<div class="medbox" id="box${i}">
+<b>${m.name}</b><br>
+Qty: <span id="qty${i}">${m.qty}</span><br>
+Time: ${m.time}<br>
+${m.mealType}<br>
+${m.voiceUrl?`<audio id="aud${i}" src="${m.voiceUrl}"></audio>`:""}
+<button onclick="markTaken('${m.name}',${i})">Taken</button>
+</div>`;
+});
+patientMeds.innerHTML=box;
+
+if(alertEnabled) scheduleAlarms(r.medicines);
+}
+
+async function markTaken(name,i){
+let r=await api({action:"markTaken",phone:userPhone,medicine:name});
+if(r.status==="ok"){
+document.getElementById("qty"+i).innerText=r.newQty;
+}
+}
+
+/* ---------------- ALARM + AUTO PLAY ---------------- */
+
+function enableAlerts(){
+alertEnabled=true;
+alert("Medicine alerts enabled. Keep this page open.");
+loadPatientMeds();
+}
+
+function scheduleAlarms(meds){
+
+meds.forEach((m,i)=>{
+let parts=m.time.split(":");
+let now=new Date();
+let t=new Date();
+t.setHours(parts[0],parts[1],0,0);
+if(t<now) t.setDate(t.getDate()+1);
+
+let delay=t-now;
+
+setTimeout(()=>{
+alert("Time to take: "+m.name);
+if(m.voiceUrl){
+let a=document.getElementById("aud"+i);
+if(a){a.play().catch(()=>{});}
+}
+},delay);
+});
+}
+
+</script>
+
+</body>
+</html>
